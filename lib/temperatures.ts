@@ -12,7 +12,8 @@ const SENSOR_INDICES = [0, 1, 2, 3] as const
 export const SENSOR_LABELS = SENSOR_INDICES.map((i) => `Sensor ${i + 1}`)
 export const SENSOR_COLORS = SENSOR_INDICES.map((i) => `var(--chart-${i + 1})`)
 
-const ENDPOINT = "http://activesaip.thomasbechu.me/temperatures"
+const ENDPOINT =
+  process.env.TEMPERATURES_URL ?? "http://activesaip.thomasbechu.me/temperatures"
 const SERIES_TARGET = 240
 
 export async function fetchReadings(): Promise<Reading[]> {
