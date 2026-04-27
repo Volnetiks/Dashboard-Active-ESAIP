@@ -22,15 +22,33 @@ import {
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
+function describeError(e: unknown): string {
+  const parts: string[] = []
+  let current: unknown = e
+  while (current) {
+    if (current instanceof Error) {
+      parts.push(`${current.name}: ${current.message}`)
+      current = (current as { cause?: unknown }).cause
+    } else {
+      parts.push(String(current))
+      break
+    }
+  }
+  return parts.join("\n  ↳ caused by ")
+}
+
 export default async function Page() {
   let summaries: RoomSummary[] = []
   let error: string | null = null
+  let stack: string | null = null
 
   try {
     const readings = await fetchReadings()
     summaries = summarize(readings)
   } catch (e) {
-    error = e instanceof Error ? e.message : "Unknown error"
+    console.error("[dashboard] fetch failed:", e)
+    error = describeError(e)
+    stack = e instanceof Error ? (e.stack ?? null) : null
   }
 
   return (
@@ -56,8 +74,26 @@ export default async function Page() {
         <Card>
           <CardHeader>
             <CardTitle>Failed to load data</CardTitle>
-            <CardDescription className="text-destructive">{error}</CardDescription>
+            <CardDescription>
+              Endpoint:{" "}
+              <code className="font-mono">
+                http://activesaip.thomasbechu.me/temperatures
+              </code>
+            </CardDescription>
           </CardHeader>
+          <CardContent>
+            <pre className="overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap text-destructive">
+              {error}
+            </pre>
+            {stack && (
+              <details className="mt-2 text-xs text-muted-foreground">
+                <summary className="cursor-pointer">Stack trace</summary>
+                <pre className="mt-2 overflow-auto rounded-md bg-muted p-3 font-mono whitespace-pre-wrap">
+                  {stack}
+                </pre>
+              </details>
+            )}
+          </CardContent>
         </Card>
       )}
 
