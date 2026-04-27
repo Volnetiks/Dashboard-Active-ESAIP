@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.idea
+.vscode
+README.md
+.DS_Store
+*.log
+.env*.local
+.prettier*
+.eslint*
