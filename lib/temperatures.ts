@@ -8,6 +8,14 @@ export type SeriesPoint = { time: string; ts: number; s0: number; s1: number; s2
 // prettier-ignore
 export type RoomSummary = { room: string; count: number; latest: Reading; earliest: Reading; sensors: SensorStats[]; humidity: Range; series: SeriesPoint[] }
 
+export const SENSOR_LABELS_BY_ROOM: Record<string, string[]> = {
+  A: ["Plafond", "Avant du rack", "Linteau", "GPU AI"],
+  E: ["Sous le serveur", "Ventilo arrière serveur", "Plafond", "Porte linteau"],
+}
+
+export const getSensorLabel = (room: string, index: number) =>
+  SENSOR_LABELS_BY_ROOM[room]?.[index] ?? `Sensor ${index + 1}`
+
 const SENSOR_INDICES = [0, 1, 2, 3] as const
 export const SENSOR_LABELS = SENSOR_INDICES.map((i) => `Sensor ${i + 1}`)
 export const SENSOR_COLORS = SENSOR_INDICES.map((i) => `var(--chart-${i + 1})`)
@@ -24,9 +32,22 @@ export async function fetchReadings(): Promise<Reading[]> {
 
 const round = (n: number) => Math.round(n * 10) / 10
 
+export function parseTime(time: string) {
+  return new Date(time.endsWith("Z") ? time : `${time}Z`).getTime()
+}
+
 function buildPoint(r: Reading, overrides?: Partial<SeriesPoint>): SeriesPoint {
   const [s0, s1, s2, s3] = r.temperatures
-  return { time: r.time, ts: new Date(r.time).getTime(), s0, s1, s2, s3, humidity: r.humidity, ...overrides }
+  return {
+    time: r.time,
+    ts: parseTime(r.time),
+    s0,
+    s1,
+    s2,
+    s3,
+    humidity: r.humidity,
+    ...overrides,
+  }
 }
 
 function avgOver(slice: Reading[], get: (r: Reading) => number) {
@@ -94,9 +115,12 @@ function summarizeRoom(room: string, all: Reading[]): RoomSummary {
   }
 }
 
-export function summarize(readings: Reading[]): RoomSummary[] {
+export function summarize(readings: Reading[], since?: number): RoomSummary[] {
   const byRoom = new Map<string, Reading[]>()
-  for (const r of readings) {
+  const filtered = since
+    ? readings.filter((r) => parseTime(r.time) > since)
+    : readings
+  for (const r of filtered) {
     const arr = byRoom.get(r.room) ?? []
     arr.push(r)
     byRoom.set(r.room, arr)

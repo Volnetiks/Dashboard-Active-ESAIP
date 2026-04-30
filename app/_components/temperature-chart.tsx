@@ -13,19 +13,27 @@ import {
 
 import {
   SENSOR_COLORS,
-  SENSOR_LABELS,
+  getSensorLabel,
   type SeriesPoint,
 } from "@/lib/temperatures"
 
 const SENSOR_KEYS = ["s0", "s1", "s2", "s3"] as const
 
-const formatTime = (ts: number) =>
-  new Date(ts).toLocaleString(undefined, {
+const formatTime = (ts: number, view?: "full" | "daily") => {
+  const d = new Date(ts)
+  if (view === "daily") {
+    return d.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+  return d.toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   })
+}
 
 const formatTemp = (n: number) => `${n.toFixed(1)}°C`
 
@@ -33,16 +41,18 @@ function TooltipBox({
   active,
   payload,
   label,
+  view,
 }: {
   active?: boolean
   payload?: Array<{ dataKey: string; value: number; color: string; name: string }>
   label?: number
+  view?: "full" | "daily"
 }) {
   if (!active || !payload?.length || label == null) return null
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
       <div className="mb-1 font-medium text-popover-foreground">
-        {formatTime(label)}
+        {formatTime(label, view)}
       </div>
       {payload.map((p) => (
         <div key={p.dataKey} className="flex items-center gap-2">
@@ -60,7 +70,15 @@ function TooltipBox({
   )
 }
 
-export function TemperatureChart({ data }: { data: SeriesPoint[] }) {
+export function TemperatureChart({
+  data,
+  room,
+  view,
+}: {
+  data: SeriesPoint[]
+  room: string
+  view?: "full" | "daily"
+}) {
   return (
     <div className="h-80 w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -71,7 +89,7 @@ export function TemperatureChart({ data }: { data: SeriesPoint[] }) {
             type="number"
             domain={["dataMin", "dataMax"]}
             scale="time"
-            tickFormatter={formatTime}
+            tickFormatter={(v) => formatTime(v, view)}
             tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             stroke="var(--border)"
             minTickGap={48}
@@ -82,7 +100,7 @@ export function TemperatureChart({ data }: { data: SeriesPoint[] }) {
             stroke="var(--border)"
             width={40}
           />
-          <Tooltip content={<TooltipBox />} />
+          <Tooltip content={<TooltipBox view={view} />} />
           <Legend
             iconType="circle"
             wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
@@ -92,7 +110,7 @@ export function TemperatureChart({ data }: { data: SeriesPoint[] }) {
               key={key}
               type="monotone"
               dataKey={key}
-              name={SENSOR_LABELS[i]}
+              name={getSensorLabel(room, i)}
               stroke={SENSOR_COLORS[i]}
               strokeWidth={1.6}
               dot={false}
@@ -105,7 +123,13 @@ export function TemperatureChart({ data }: { data: SeriesPoint[] }) {
   )
 }
 
-export function HumidityChart({ data }: { data: SeriesPoint[] }) {
+export function HumidityChart({
+  data,
+  view,
+}: {
+  data: SeriesPoint[]
+  view?: "full" | "daily"
+}) {
   return (
     <div className="h-48 w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -116,7 +140,7 @@ export function HumidityChart({ data }: { data: SeriesPoint[] }) {
             type="number"
             domain={["dataMin", "dataMax"]}
             scale="time"
-            tickFormatter={formatTime}
+            tickFormatter={(v) => formatTime(v, view)}
             tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             stroke="var(--border)"
             minTickGap={48}
@@ -130,7 +154,7 @@ export function HumidityChart({ data }: { data: SeriesPoint[] }) {
           />
           <Tooltip
             formatter={(v) => [`${Number(v).toFixed(0)}%`, "Humidity"]}
-            labelFormatter={(l) => formatTime(Number(l))}
+            labelFormatter={(l) => formatTime(Number(l), view)}
             contentStyle={{
               background: "var(--popover)",
               border: "1px solid var(--border)",

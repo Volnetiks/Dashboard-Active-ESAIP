@@ -1,3 +1,4 @@
+import Link from "next/link"
 import {
   Card,
   CardContent,
@@ -6,11 +7,13 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   fetchReadings,
   summarize,
+  parseTime,
   SENSOR_COLORS,
-  SENSOR_LABELS,
+  getSensorLabel,
   type RoomSummary,
   type SensorStats,
 } from "@/lib/temperatures"
@@ -37,14 +40,21 @@ function describeError(e: unknown): string {
   return parts.join("\n  ↳ caused by ")
 }
 
-export default async function Page() {
+export default async function Page(props: {
+  searchParams: Promise<{ view?: string }>
+}) {
+  const searchParams = await props.searchParams
+  const view = searchParams.view === "daily" ? "daily" : "full"
+
   let summaries: RoomSummary[] = []
   let error: string | null = null
   let stack: string | null = null
 
   try {
     const readings = await fetchReadings()
-    summaries = summarize(readings)
+    const since =
+      view === "daily" ? Date.now() - 24 * 60 * 60 * 1000 : undefined
+    summaries = summarize(readings, since)
   } catch (e) {
     console.error("[dashboard] fetch failed:", e)
     error = describeError(e)
@@ -53,14 +63,34 @@ export default async function Page() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-3xl font-medium tracking-tight">
-            Server Room Monitor
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Live temperature & humidity from on-prem sensors.
-          </p>
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b pb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
+          <div>
+            <h1 className="font-heading text-3xl font-medium tracking-tight">
+              Server Room Monitor
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Live temperature & humidity from on-prem sensors.
+            </p>
+          </div>
+          <nav className="flex items-center gap-1 rounded-lg border bg-muted p-1">
+            <Button
+              variant={view === "full" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-3 text-xs"
+              asChild
+            >
+              <Link href="/?view=full">Full Window</Link>
+            </Button>
+            <Button
+              variant={view === "daily" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-3 text-xs"
+              asChild
+            >
+              <Link href="/?view=daily">Daily (24h)</Link>
+            </Button>
+          </nav>
         </div>
         <div className="text-xs text-muted-foreground">
           Refreshed{" "}
@@ -98,14 +128,18 @@ export default async function Page() {
       )}
 
       {summaries.map((s) => (
-        <RoomPanel key={s.room} summary={s} />
+        <RoomPanel key={s.room} summary={s} view={view} />
       ))}
 
       {!error && summaries.length === 0 && (
         <Card>
           <CardHeader>
             <CardTitle>No data</CardTitle>
-            <CardDescription>Endpoint returned no readings.</CardDescription>
+            <CardDescription>
+              {view === "daily"
+                ? "No readings in the last 24 hours."
+                : "Endpoint returned no readings."}
+            </CardDescription>
           </CardHeader>
         </Card>
       )}
@@ -113,7 +147,13 @@ export default async function Page() {
   )
 }
 
-function RoomPanel({ summary }: { summary: RoomSummary }) {
+function RoomPanel({
+  summary,
+  view,
+}: {
+  summary: RoomSummary
+  view: "full" | "daily"
+}) {
   const { room, count, latest, earliest, sensors, humidity, series } = summary
   const hottest = sensors.reduce((a, b) => (b.current > a.current ? b : a))
 
@@ -123,17 +163,17 @@ function RoomPanel({ summary }: { summary: RoomSummary }) {
         <div className="flex items-center gap-3">
           <h2 className="font-heading text-xl font-medium">Room {room}</h2>
           <Badge variant="secondary">{count.toLocaleString()} readings</Badge>
-          <ThermalBadge sensor={hottest} />
+          <ThermalBadge sensor={hottest} room={room} />
         </div>
         <div className="text-xs text-muted-foreground">
-          {new Date(earliest.time).toLocaleString()} →{" "}
-          {new Date(latest.time).toLocaleString()}
+          {new Date(parseTime(earliest.time)).toLocaleString()} →{" "}
+          {new Date(parseTime(latest.time)).toLocaleString()}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {sensors.map((s) => (
-          <SensorCard key={s.index} sensor={s} />
+          <SensorCard key={s.index} sensor={s} room={room} />
         ))}
         <Card size="sm">
           <CardHeader>
@@ -153,29 +193,31 @@ function RoomPanel({ summary }: { summary: RoomSummary }) {
         <CardHeader>
           <CardTitle>Temperatures</CardTitle>
           <CardDescription>
-            Per-sensor readings, downsampled to {series.length} points across the
-            full window.
+            Per-sensor readings, {view === "daily" ? "detailed view" : `downsampled to ${series.length} points`} across the{" "}
+            {view === "daily" ? "last 24 hours" : "full window"}.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <TemperatureChart data={series} />
+          <TemperatureChart data={series} room={room} view={view} />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>Humidity</CardTitle>
-          <CardDescription>Relative humidity (%) over time.</CardDescription>
+          <CardDescription>
+            Relative humidity (%) over {view === "daily" ? "the last 24 hours" : "time"}.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <HumidityChart data={series} />
+          <HumidityChart data={series} view={view} />
         </CardContent>
       </Card>
     </section>
   )
 }
 
-function SensorCard({ sensor }: { sensor: SensorStats }) {
+function SensorCard({ sensor, room }: { sensor: SensorStats; room: string }) {
   const trend =
     sensor.delta > 0 ? "up" : sensor.delta < 0 ? "down" : "flat"
   const trendChar = trend === "up" ? "▲" : trend === "down" ? "▼" : "•"
@@ -194,7 +236,7 @@ function SensorCard({ sensor }: { sensor: SensorStats }) {
             className="inline-block size-2 rounded-full"
             style={{ background: SENSOR_COLORS[sensor.index] }}
           />
-          {SENSOR_LABELS[sensor.index]}
+          {getSensorLabel(room, sensor.index)}
         </CardDescription>
         <CardTitle className="flex items-baseline gap-2 font-mono text-2xl">
           {sensor.current.toFixed(1)}°
@@ -211,18 +253,18 @@ function SensorCard({ sensor }: { sensor: SensorStats }) {
   )
 }
 
-function ThermalBadge({ sensor }: { sensor: SensorStats }) {
+function ThermalBadge({ sensor, room }: { sensor: SensorStats; room: string }) {
   if (sensor.current >= 30) {
     return (
       <Badge variant="destructive">
-        Hot · {SENSOR_LABELS[sensor.index]} {sensor.current.toFixed(1)}°
+        Hot · {getSensorLabel(room, sensor.index)} {sensor.current.toFixed(1)}°
       </Badge>
     )
   }
   if (sensor.current >= 26) {
     return (
       <Badge variant="outline">
-        Warm · {SENSOR_LABELS[sensor.index]} {sensor.current.toFixed(1)}°
+        Warm · {getSensorLabel(room, sensor.index)} {sensor.current.toFixed(1)}°
       </Badge>
     )
   }
