@@ -49,12 +49,13 @@ function TooltipBox({
   view?: "full" | "daily"
 }) {
   if (!active || !payload?.length || label == null) return null
+  const sorted = [...payload].sort((a, b) => b.value - a.value)
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
       <div className="mb-1 font-medium text-popover-foreground">
         {formatTime(label, view)}
       </div>
-      {payload.map((p) => (
+      {sorted.map((p) => (
         <div key={p.dataKey} className="flex items-center gap-2">
           <span
             className="inline-block size-2 rounded-full"
