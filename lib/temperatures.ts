@@ -115,11 +115,21 @@ function summarizeRoom(room: string, all: Reading[]): RoomSummary {
   }
 }
 
-export function summarize(readings: Reading[], since?: number): RoomSummary[] {
+export function summarize(
+  readings: Reading[],
+  since?: number,
+  until?: number
+): RoomSummary[] {
   const byRoom = new Map<string, Reading[]>()
-  const filtered = since
-    ? readings.filter((r) => parseTime(r.time) > since)
-    : readings
+  const filtered =
+    since != null || until != null
+      ? readings.filter((r) => {
+          const ts = parseTime(r.time)
+          if (since != null && ts < since) return false
+          if (until != null && ts > until) return false
+          return true
+        })
+      : readings
   for (const r of filtered) {
     const arr = byRoom.get(r.room) ?? []
     arr.push(r)
