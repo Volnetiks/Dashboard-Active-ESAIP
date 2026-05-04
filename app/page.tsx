@@ -40,11 +40,26 @@ function describeError(e: unknown): string {
   return parts.join("\n  ↳ caused by ")
 }
 
+type ViewMode = "full" | "daily" | "custom"
+
+const parseLocalDateTime = (v?: string) => {
+  if (!v) return undefined
+  const t = new Date(v).getTime()
+  return Number.isFinite(t) ? t : undefined
+}
+
 export default async function Page(props: {
-  searchParams: Promise<{ view?: string }>
+  searchParams: Promise<{ view?: string; from?: string; to?: string }>
 }) {
   const searchParams = await props.searchParams
-  const view = searchParams.view === "daily" ? "daily" : "full"
+  const view: ViewMode =
+    searchParams.view === "daily"
+      ? "daily"
+      : searchParams.view === "custom"
+        ? "custom"
+        : "full"
+  const from = parseLocalDateTime(searchParams.from)
+  const to = parseLocalDateTime(searchParams.to)
 
   let summaries: RoomSummary[] = []
   let error: string | null = null
@@ -52,14 +67,27 @@ export default async function Page(props: {
 
   try {
     const readings = await fetchReadings()
-    const since =
-      view === "daily" ? Date.now() - 24 * 60 * 60 * 1000 : undefined
-    summaries = summarize(readings, since)
+    let since: number | undefined
+    let until: number | undefined
+    if (view === "daily") {
+      since = Date.now() - 24 * 60 * 60 * 1000
+    } else if (view === "custom") {
+      since = from
+      until = to
+    }
+    summaries = summarize(readings, since, until)
   } catch (e) {
     console.error("[dashboard] fetch failed:", e)
     error = describeError(e)
     stack = e instanceof Error ? (e.stack ?? null) : null
   }
+
+  const customSpan =
+    view === "custom" && from != null && to != null ? to - from : null
+  const chartView: "full" | "daily" =
+    view === "daily" || (customSpan != null && customSpan <= 48 * 60 * 60 * 1000)
+      ? "daily"
+      : "full"
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
@@ -73,24 +101,64 @@ export default async function Page(props: {
               Live temperature & humidity from on-prem sensors.
             </p>
           </div>
-          <nav className="flex items-center gap-1 rounded-lg border bg-muted p-1">
-            <Button
-              variant={view === "full" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 px-3 text-xs"
-              asChild
-            >
-              <Link href="/?view=full">Full Window</Link>
-            </Button>
-            <Button
-              variant={view === "daily" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 px-3 text-xs"
-              asChild
-            >
-              <Link href="/?view=daily">Daily (24h)</Link>
-            </Button>
-          </nav>
+          <div className="flex flex-col items-start gap-2">
+            <nav className="flex items-center gap-1 rounded-lg border bg-muted p-1">
+              <Button
+                variant={view === "full" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 px-3 text-xs"
+                asChild
+              >
+                <Link href="/?view=full">Full Window</Link>
+              </Button>
+              <Button
+                variant={view === "daily" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 px-3 text-xs"
+                asChild
+              >
+                <Link href="/?view=daily">Daily (24h)</Link>
+              </Button>
+              <Button
+                variant={view === "custom" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 px-3 text-xs"
+                asChild
+              >
+                <Link href="/?view=custom">Custom</Link>
+              </Button>
+            </nav>
+            {view === "custom" && (
+              <form
+                action="/"
+                method="get"
+                className="flex flex-wrap items-center gap-2 text-xs"
+              >
+                <input type="hidden" name="view" value="custom" />
+                <label className="flex items-center gap-1">
+                  <span className="text-muted-foreground">From</span>
+                  <input
+                    type="datetime-local"
+                    name="from"
+                    defaultValue={searchParams.from ?? ""}
+                    className="h-7 rounded border bg-background px-2 font-mono"
+                  />
+                </label>
+                <label className="flex items-center gap-1">
+                  <span className="text-muted-foreground">To</span>
+                  <input
+                    type="datetime-local"
+                    name="to"
+                    defaultValue={searchParams.to ?? ""}
+                    className="h-7 rounded border bg-background px-2 font-mono"
+                  />
+                </label>
+                <Button type="submit" size="sm" className="h-7 px-3 text-xs">
+                  Apply
+                </Button>
+              </form>
+            )}
+          </div>
         </div>
         <div className="text-xs text-muted-foreground">
           Refreshed{" "}
@@ -128,7 +196,12 @@ export default async function Page(props: {
       )}
 
       {summaries.map((s) => (
-        <RoomPanel key={s.room} summary={s} view={view} />
+        <RoomPanel
+          key={s.room}
+          summary={s}
+          view={view}
+          chartView={chartView}
+        />
       ))}
 
       {!error && summaries.length === 0 && (
@@ -138,7 +211,9 @@ export default async function Page(props: {
             <CardDescription>
               {view === "daily"
                 ? "No readings in the last 24 hours."
-                : "Endpoint returned no readings."}
+                : view === "custom"
+                  ? "No readings in the selected timeframe."
+                  : "Endpoint returned no readings."}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -150,10 +225,18 @@ export default async function Page(props: {
 function RoomPanel({
   summary,
   view,
+  chartView,
 }: {
   summary: RoomSummary
-  view: "full" | "daily"
+  view: ViewMode
+  chartView: "full" | "daily"
 }) {
+  const windowLabel =
+    view === "daily"
+      ? "last 24 hours"
+      : view === "custom"
+        ? "selected timeframe"
+        : "full window"
   const { room, count, latest, earliest, sensors, humidity, series } = summary
   const hottest = sensors.reduce((a, b) => (b.current > a.current ? b : a))
 
@@ -193,12 +276,11 @@ function RoomPanel({
         <CardHeader>
           <CardTitle>Temperatures</CardTitle>
           <CardDescription>
-            Per-sensor readings, {view === "daily" ? "detailed view" : `downsampled to ${series.length} points`} across the{" "}
-            {view === "daily" ? "last 24 hours" : "full window"}.
+            Per-sensor readings, {chartView === "daily" ? "detailed view" : `downsampled to ${series.length} points`} across the {windowLabel}.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <TemperatureChart data={series} room={room} view={view} />
+          <TemperatureChart data={series} room={room} view={chartView} />
         </CardContent>
       </Card>
 
@@ -206,11 +288,11 @@ function RoomPanel({
         <CardHeader>
           <CardTitle>Humidity</CardTitle>
           <CardDescription>
-            Relative humidity (%) over {view === "daily" ? "the last 24 hours" : "time"}.
+            Relative humidity (%) over {view === "full" ? "time" : `the ${windowLabel}`}.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <HumidityChart data={series} view={view} />
+          <HumidityChart data={series} view={chartView} />
         </CardContent>
       </Card>
     </section>
