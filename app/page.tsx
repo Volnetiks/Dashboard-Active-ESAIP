@@ -21,6 +21,7 @@ import {
   HumidityChart,
   TemperatureChart,
 } from "@/app/_components/temperature-chart"
+import { DateRangeForm } from "@/app/_components/date-range-form"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -129,34 +130,10 @@ export default async function Page(props: {
               </Button>
             </nav>
             {view === "custom" && (
-              <form
-                action="/"
-                method="get"
-                className="flex flex-wrap items-center gap-2 text-xs"
-              >
-                <input type="hidden" name="view" value="custom" />
-                <label className="flex items-center gap-1">
-                  <span className="text-muted-foreground">From</span>
-                  <input
-                    type="datetime-local"
-                    name="from"
-                    defaultValue={searchParams.from ?? ""}
-                    className="h-7 rounded border bg-background px-2 font-mono"
-                  />
-                </label>
-                <label className="flex items-center gap-1">
-                  <span className="text-muted-foreground">To</span>
-                  <input
-                    type="datetime-local"
-                    name="to"
-                    defaultValue={searchParams.to ?? ""}
-                    className="h-7 rounded border bg-background px-2 font-mono"
-                  />
-                </label>
-                <Button type="submit" size="sm" className="h-7 px-3 text-xs">
-                  Apply
-                </Button>
-              </form>
+              <DateRangeForm
+                initialFrom={searchParams.from}
+                initialTo={searchParams.to}
+              />
             )}
           </div>
         </div>
